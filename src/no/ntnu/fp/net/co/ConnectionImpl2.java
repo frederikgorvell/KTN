@@ -150,7 +150,7 @@ public class ConnectionImpl2 extends AbstractConnection {
     	
 		if(ack != null && ack.getFlag() == Flag.ACK && ack.getSeq_nr() == syn.getSeq_nr()+1) {
 			lastValidPacketReceived = ack;
-            AbstractConnection connection = (ConnectionImpl) this.clone();
+            AbstractConnection connection = (ConnectionImpl3) this.clone();
 			connection.state = State.ESTABLISHED;
 			reset();
 			return connection;
@@ -184,7 +184,7 @@ public class ConnectionImpl2 extends AbstractConnection {
         		  throw new IOException("DataPacket was sent, " +
                   "but did not receive correct ACK");
         	}
-        	attempts+=1;
+        	attempts++;
         	
         	ack = sendDataPacketWithRetransmit(packet);
         
@@ -403,7 +403,7 @@ public class ConnectionImpl2 extends AbstractConnection {
     }
 
     public Object clone() {
-        ConnectionImpl newCon = new ConnectionImpl(myPort);
+        ConnectionImpl3 newCon = new ConnectionImpl3(myPort);
         newCon.myAddress = myAddress;
         newCon.myPort = myPort;
         newCon.remoteAddress = remoteAddress;

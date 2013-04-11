@@ -20,7 +20,7 @@ import javax.swing.JOptionPane;
 import no.ntnu.fp.net.admin.Log;
 import no.ntnu.fp.net.admin.Settings;
 import no.ntnu.fp.net.co.Connection;
-import no.ntnu.fp.net.co.ConnectionImpl;
+import no.ntnu.fp.net.co.ConnectionImpl3;
 import no.ntnu.fp.net.co.SimpleConnection;
 import no.ntnu.fp.net.separat.client.ChatClient;
 
@@ -174,7 +174,7 @@ public class ChatServer extends JFrame {
         if (SIMPLE_CONNECTION)
             server = new SimpleConnection(listenPort);
         else
-            server = new ConnectionImpl(listenPort);
+            server = new ConnectionImpl3(listenPort);
 
         Thread listener = new Thread() {
 
