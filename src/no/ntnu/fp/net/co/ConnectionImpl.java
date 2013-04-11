@@ -248,7 +248,7 @@ public class ConnectionImpl extends AbstractConnection {
     	State initialState = state;
         KtnDatagram packet = constructInternalPacket(Flag.FIN);
     	KtnDatagram ack;
-    	do{
+    	do {
     		state = initialState;
     		try{
 				simplySendPacket(packet);
@@ -256,22 +256,22 @@ public class ConnectionImpl extends AbstractConnection {
 			}
 			state = disconnectRequest != null ? State.LAST_ACK : State.FIN_WAIT_1;
     		ack = receiveAck();
-    	}while(!isValid(ack) || ack.getFlag() != Flag.ACK);
-    	if(ack.getSeq_nr() > lastValidPacketReceived.getSeq_nr()){
+    	} while(!isValid(ack) || ack.getFlag() != Flag.ACK);
+    	if (ack.getSeq_nr() > lastValidPacketReceived.getSeq_nr()) {
     		lastValidPacketReceived = ack;
     	}
         
-        if(disconnectRequest != null){
+        if (disconnectRequest != null) {
         	state = State.CLOSED;
-        }else{
+        } else {
         	state = State.FIN_WAIT_2;
         	KtnDatagram finPacket;
-        	do{
+        	do {
         		finPacket = receivePacket(true);
-        	}while (!isValid(finPacket));
-        	try{
+        	} while (!isValid(finPacket));
+        	try {
         		Thread.sleep(1000);
-    		}catch(InterruptedException e){
+    		} catch(InterruptedException e) {
     		}
         	sendAck(finPacket, false);
         	state = State.TIME_WAIT;
