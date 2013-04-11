@@ -35,7 +35,7 @@ public class TestCoClient {
     log.setLogName("Client");
 
     // Connection object listening on 4001
-    Connection conn = new ConnectionImpl3(4001);
+    Connection conn = new ConnectionImpl(4001);
     InetAddress addr;  // will hold address of host to connect to
     try {
       // get address of local host and connect

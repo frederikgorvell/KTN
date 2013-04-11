@@ -16,12 +16,32 @@ import no.ntnu.fp.net.cl.ClSocket;
 import no.ntnu.fp.net.cl.KtnDatagram;
 import no.ntnu.fp.net.cl.KtnDatagram.Flag;
 
+/**
+ * Implementation of the Connection-interface. <br>
+ * <br>
+ * This class implements the behavior in the methods specified in the interface
+ * {@link Connection} over the unreliable, connectionless network realized in
+ * {@link ClSocket}. The base class, {@link AbstractConnection} implements some
+ * of the functionality, leaving message passing and error handling to this
+ * implementation.
+ * 
+ * @author Sebjørn Birkeland and Stein Jakob Nordbø
+ * @see no.ntnu.fp.net.co.Connection
+ * @see no.ntnu.fp.net.cl.ClSocket
+ */
 public class ConnectionImpl extends AbstractConnection {
 
+	/** Keeps track of the used ports for each server port. */
     private static Map<Integer, Boolean> usedPorts = Collections.synchronizedMap(new HashMap<Integer, Boolean>());
     private static boolean sendingPacket;
     private final int MAX_TRIES = 10;
 
+    /**
+     * Initialize initial sequence number and setup state machine.
+     * 
+     * @param myPort
+     *            - the local port to associate with this connection
+     */
     public ConnectionImpl(int myPort) {
     	super();
     	ConnectionImpl.usedPorts.put(myPort, true);
@@ -38,6 +58,19 @@ public class ConnectionImpl extends AbstractConnection {
         }
     }
 
+    /**
+     * Establish a connection to a remote location.
+     * 
+     * @param remoteAddress
+     *            - the remote IP-address to connect to
+     * @param remotePort
+     *            - the remote portnumber to connect to
+     * @throws IOException
+     *             If there's an I/O error.
+     * @throws java.net.SocketTimeoutException
+     *             If timeout expires before connection is completed.
+     * @see Connection#connect(InetAddress, int)
+     */
     public void connect(InetAddress remoteAddress, int remotePort) throws IOException, SocketTimeoutException {
     	if (state != State.CLOSED){
     		throw new IllegalStateException("Must be in closed state.");
@@ -75,6 +108,12 @@ public class ConnectionImpl extends AbstractConnection {
         state = State.ESTABLISHED;
     }
 
+    /**
+     * Listen for, and accept, incoming connections.
+     * 
+     * @return A new ConnectionImpl-object representing the new connection.
+     * @see Connection#accept()
+     */
     public Connection accept() throws IOException, SocketTimeoutException {
     	if (state != State.CLOSED){
     		throw new IllegalStateException("Must be in closed state.");
@@ -112,6 +151,18 @@ public class ConnectionImpl extends AbstractConnection {
         return newConnection;
     }
 
+    /**
+     * Send a message from the application.
+     * 
+     * @param msg
+     *            - the String to be sent.
+     * @throws ConnectException
+     *             If no connection exists.
+     * @throws IOException
+     *             If no ACK was received.
+     * @see AbstractConnection#sendDataPacketWithRetransmit(KtnDatagram)
+     * @see no.ntnu.fp.net.co.Connection#send(String)
+     */
     public void send(String msg) throws ConnectException, IOException {
     	while(sendingPacket){
 			try{
@@ -143,6 +194,14 @@ public class ConnectionImpl extends AbstractConnection {
     	sendingPacket = false;
     }
 
+    /**
+     * Wait for incoming data.
+     * 
+     * @return The received data's payload as a String.
+     * @see Connection#receive()
+     * @see AbstractConnection#receivePacket(boolean)
+     * @see AbstractConnection#sendAck(KtnDatagram, boolean)
+     */
     public String receive() throws ConnectException, IOException {
     	int triesLeft = MAX_TRIES;
     	KtnDatagram packet = null;
@@ -180,6 +239,11 @@ public class ConnectionImpl extends AbstractConnection {
     	}
     }
 
+    /**
+     * Close the connection.
+     * 
+     * @see Connection#close()
+     */
     public void close() throws IOException {
     	State initialState = state;
         KtnDatagram packet = constructInternalPacket(Flag.FIN);
@@ -218,6 +282,14 @@ public class ConnectionImpl extends AbstractConnection {
         }
     }
 
+    /**
+     * Test a packet for transmission errors. This function should only called
+     * with data or ACK packets in the ESTABLISHED state.
+     * 
+     * @param packet
+     *            Packet to test.
+     * @return true if packet is free of errors, false otherwise.
+     */
     protected boolean isValid(KtnDatagram packet) {
         return packet != null && packet.getChecksum() == packet.calculateChecksum();
     }
