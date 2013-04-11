@@ -12,6 +12,7 @@ import java.net.UnknownHostException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Timer;
 
 //import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
@@ -30,14 +31,14 @@ import no.ntnu.fp.net.cl.KtnDatagram.Flag;
  * of the functionality, leaving message passing and error handling to this
  * implementation.
  * 
- * @author Sebj�rn Birkeland and Stein Jakob Nordb�
+ * @author Sebj¯rn Birkeland and Stein Jakob Nordb¯
  * @see no.ntnu.fp.net.co.Connection
  * @see no.ntnu.fp.net.cl.ClSocket
  */
 public class ConnectionImpl extends AbstractConnection {
 
     /** Keeps track of the used ports for each server port. */
-    private static Map<Integer, Boolean> usedPorts = Collections.synchronizedMap(new HashMap<Integer, Boolean>());
+//    private static Map<Integer, Boolean> usedPorts = Collections.synchronizedMap(new HashMap<Integer, Boolean>());
 
     /**
      * Initialize initial sequence number and setup state machine.
@@ -46,11 +47,9 @@ public class ConnectionImpl extends AbstractConnection {
      *            - the local port to associate with this connection
      */
     public ConnectionImpl(int myPort) {
-    	super();
+    	this.myAddress = getIPv4Address();
         this.myPort = myPort;
-        usedPorts.put(myPort, true);
-        myAddress = getIPv4Address();
-        //throw new NotImplementedException();
+        System.out.println("Ny forbindelse kjører nå på " + this.myAddress);
     }
 
     private String getIPv4Address() {
@@ -77,39 +76,38 @@ public class ConnectionImpl extends AbstractConnection {
      */
     public void connect(InetAddress remoteAddress, int remotePort) throws IOException,
             SocketTimeoutException {
+    	this.remoteAddress = remoteAddress.getHostAddress();
     	this.remotePort = remotePort;
-        this.remoteAddress = remoteAddress.getHostAddress();
-        
-        try {
-        	//Send SYN
-        	System.out.println("send syn");
-        	KtnDatagram ktnConnect = constructInternalPacket(Flag.SYN);
-        	simplySendPacket(ktnConnect);
-			state = State.SYN_SENT;
-
-			//Receive SYNACK
-			System.out.println("receive synack");
-			KtnDatagram ktnSynAck = receiveAck();
-			if (!isValid(ktnSynAck)) {
-				throw new IOException();
-			}
-			System.out.println("ack nr: " + ktnSynAck.getSeq_nr());
-
-			//Fix stupid problem
-			Thread.sleep(10);
-
-			//Send ACK
-			System.out.println("send ack");
-			sendAck(ktnSynAck, false);
-			state = State.ESTABLISHED;
-
-			System.out.println("connection established");
-
-		} catch (Exception e) {
-			state = State.CLOSED;
-			e.printStackTrace();
-			throw new IOException();
-		}
+    	KtnDatagram syn = constructInternalPacket(Flag.SYN);
+    	this.state = State.SYN_SENT;
+    	KtnDatagram synAck = sendUntilAcked(syn);
+    	sendAck(synAck);
+    	this.state = State.ESTABLISHED;
+    }
+    
+    /**
+     * Tries to send the packet until a correct ack is received or the 
+     * connection can be considered terminated.
+     * @param packetToSend
+     * @throws EOFException
+     * @throws IOException
+     */
+    private KtnDatagram sendUntilAcked(KtnDatagram packetToSend) throws EOFException, IOException{
+    	Timer timer = new Timer();
+    	timer.scheduleAtFixedRate(new SendTimer(new ClSocket(), packetToSend), 0, RETRANSMIT);
+    	KtnDatagram response;
+    	int tries = 5;
+    	while(tries > 0){
+    		response = receiveAck();
+    		if(isValid(response)){
+    			if(response.getAck() == packetToSend.getSeq_nr()){
+    				timer.cancel();
+    				return response;
+    			}
+    		}
+    	}
+    	timer.cancel();
+    	throw new IOException("Couldn't receive response from server!");
     }
 
     /**
@@ -119,51 +117,75 @@ public class ConnectionImpl extends AbstractConnection {
      * @see Connection#accept()
      */
     public Connection accept() throws IOException, SocketTimeoutException {
-		state = State.LISTEN;
-        
-        try {
-	        //Receive SYN
-        	System.out.println("wait for syn");
-	        KtnDatagram ktnAccept = receivePacket(true);
-	        if (!isValid(ktnAccept)) {
-	        	System.out.println("not valid");
-	        	throw new IOException();
-	        }
-	        remoteAddress= ktnAccept.getSrc_addr();
-	        remotePort = ktnAccept.getSrc_port();
-
-	        state = State.SYN_RCVD;
-
-	        System.out.println(ktnAccept.getSeq_nr());
-
-	        //Send SYNACK
-	        System.out.println("send synack");
-	        sendAck(ktnAccept, true);
-
-	        //Receive ACK
-	        System.out.println("wait for ack");
-	        KtnDatagram ktnAck = receiveAck();
-	        if (!isValid(ktnAck)) {
-	        	throw new IOException();
-	        }
-	        System.out.println(ktnAck.getFlag());
-	        state = State.CLOSED;
-
-	        //Return connection
-	        System.out.println("connection established");
-	        ConnectionImpl con = new ConnectionImpl(myPort);
-	        con.nextSequenceNo = nextSequenceNo;
-	        con.myAddress = myAddress;
-	        con.myPort = myPort;
-	        con.remoteAddress = ktnAccept.getSrc_addr();
-	        con.remotePort = ktnAccept.getSrc_port();
-	        con.state = State.ESTABLISHED;
-	        return con;
-        } catch (Exception e) {
-        	state = State.CLOSED;
-        	e.printStackTrace();
-        	throw new IOException();
-        }
+    	this.state = State.LISTEN;
+    	KtnDatagram packet = receiveValidInternalPacket();
+    	this.remoteAddress = packet.getSrc_addr();
+    	this.remotePort = packet.getSrc_port();
+    	Log.writeToLog(packet, "Packet received!", "FroM!");
+    	this.state = State.ESTABLISHED;
+		sendSynAck(packet);
+		return this;
+    }
+    
+    /**
+     * Receive a valid non-internal packet.
+     * 
+     * @throws EOFException
+     * @throws IOException
+     */
+    private KtnDatagram receiveValidPacket() throws EOFException, IOException{
+    	return receiveHelper(false);
+    }
+    
+    /**
+     * Receive a valid internal packet.
+     * @throws EOFException
+     * @throws IOException
+     */
+    private KtnDatagram receiveValidInternalPacket() throws EOFException, IOException{
+    	return receiveHelper(true);
+    }
+    
+    /**
+     * Helps receive packets and performs validation according to wheter the
+     * received packet should be internal or not.
+     * @param internal
+     * @return
+     * @throws EOFException
+     * @throws IOException
+     */
+    private KtnDatagram receiveHelper(boolean internal) throws EOFException, IOException{
+    	KtnDatagram packet;
+    	int tries = 5;
+    	while(tries > 0) {
+    		packet = receivePacket(internal);
+    		if (isValid(packet)){
+    			if (internal){
+    				if (packet.getFlag() != Flag.NONE){
+    					return packet;
+    				}
+    			} else {
+    				if (packet.getFlag() == null || packet.getFlag() == Flag.NONE){
+    					return packet;
+    				}
+    			}
+    		}
+    	}
+    	throw new IOException("Cant receive correct data from server!");
+    }
+    
+    /**
+     * Send ack for the packet.
+     */
+    private void sendAck(KtnDatagram packet) throws ConnectException, IOException{
+    	sendAck(packet, false);
+    }
+    
+    /**
+     * Send SynAck for the packet.
+     */
+    private void sendSynAck(KtnDatagram packet) throws ConnectException, IOException{
+    	sendAck(packet, true);
     }
 
     /**
@@ -179,19 +201,18 @@ public class ConnectionImpl extends AbstractConnection {
      * @see no.ntnu.fp.net.co.Connection#send(String)
      */
     public void send(String msg) throws ConnectException, IOException {
-    	if(state != State.ESTABLISHED){
-        	throw new ConnectException();
+    	if (state != State.ESTABLISHED){
+        	throw new IllegalStateException("Forbindelsen må være åpnet for å kunne sende! Var i " + state);
         }
-        
-        KtnDatagram ktnPacket = constructDataPacket(msg);
-        KtnDatagram ktnAck = sendDataPacketWithRetransmit(ktnPacket);
-        
-        while (ktnAck != null && !isValid(ktnAck)) {
-        	ktnAck = sendDataPacketWithRetransmit(ktnPacket);
-        }
-        
-        if (ktnAck == null) {
-        	throw new IOException("No ack received");
+        KtnDatagram packet = constructDataPacket(msg);
+        KtnDatagram ack;
+        int tries = 5;
+        while(tries > 0){
+        	ack = sendDataPacketWithRetransmit(packet);
+        	tries--;
+        	if(isValid(ack)){
+        		break;
+        	}
         }
     }
 
@@ -204,24 +225,20 @@ public class ConnectionImpl extends AbstractConnection {
      * @see AbstractConnection#sendAck(KtnDatagram, boolean)
      */
     public String receive() throws ConnectException, IOException {
-    	if(state != State.ESTABLISHED){
-        	throw new ConnectException();
+    	try{
+        	KtnDatagram packet = receiveValidPacket();
+    		sendAck(packet);
+    		String message = (String) packet.getPayload();
+			System.out.println("RECEIVED DATA IN RECEIVE: " + message);
+			System.out.println("packet flag: " + packet.getFlag());
+			return message;
+        } catch (EOFException e){
+        	System.out.println("GOT DISCONNECT!");
+        	KtnDatagram fin = disconnectRequest;
+        	sendAck(fin);
+        	this.state = State.CLOSE_WAIT;
+        	throw e;
         }
-    	
-        KtnDatagram ktnReceivePack = receivePacket(false);
-        while (!isValid(ktnReceivePack)) {
-        	
-        	if(state != State.ESTABLISHED){
-            	throw new ConnectException();
-            }
-        	
-        	nextSequenceNo--;
-        	sendAck(lastValidPacketReceived, false);
-        	ktnReceivePack = receivePacket(false);
-        }
-        
-        sendAck(lastValidPacketReceived, false);
-		return ktnReceivePack.toString();
         
     }
 
@@ -231,77 +248,62 @@ public class ConnectionImpl extends AbstractConnection {
      * @see Connection#close()
      */
     public void close() throws IOException {
+    	boolean client = state == State.ESTABLISHED;
+    	if (client){
+    		clientClose();
+    	} else {
+    		serverClose();
+    	}
+    }
+    
+    /**
+     * Close the connection as a client.
+     */
+    private void clientClose() throws EOFException, IOException{
+    	this.state = State.FIN_WAIT_1;
+    	KtnDatagram fin = constructInternalPacket(Flag.FIN);
+    	sendUntilAcked(fin);
+		this.state = State.FIN_WAIT_2;
+		receiveAndAckFin();
+		this.state = State.TIME_WAIT;
+		closeWait();
+		this.state = State.CLOSED;
+    }
+    
+    /**
+     * Receive a FIN-packet and ack it.
+     * @throws IOException
+     */
+    private void receiveAndAckFin() throws IOException{
+    	KtnDatagram packet = receiveValidInternalPacket();
+    	if (packet.getFlag() == Flag.FIN){
+    		sendAck(packet);
+    		return;
+    	}
+    	receiveAndAckFin();
+    }
+    
+    /**
+     * Close the connection as a server.
+     * @throws EOFException
+     * @throws IOException
+     */
+    private void serverClose() throws EOFException, IOException{
+    	this.state = State.LAST_ACK;
+    	KtnDatagram fin = constructInternalPacket(Flag.FIN);
+    	sendUntilAcked(fin);
+		this.state = State.CLOSED;
+    }
+    
+    /**
+     * Wait for 3s before continuing.
+     */
+    private void closeWait(){
     	try {
-    		if (lastValidPacketReceived.getFlag() == Flag.FIN) {
-    			System.out.println("> alternativ 1");
-    			
-    			//Fix stupid problem
-    			Thread.sleep(10);
-    			
-    			//Send ack
-    			sendAck(lastValidPacketReceived, false);
-    			
-    			//Fix stupid problem
-    			Thread.sleep(100);
-    			
-    			//Send fin
-    			state = State.CLOSE_WAIT;
-		    	KtnDatagram finPacket = constructInternalPacket(Flag.FIN);
-		    	simplySendPacket(finPacket);
-		    	//sendDataPacketWithRetransmit(finPacket);
-
-		    	//Wait for ACK
-		    	state = State.LAST_ACK;
-		    	KtnDatagram ktnFinAck = receiveAck();
-		    	if (ktnFinAck == null) {
-		    		throw new Exception("No packet received");
-		    	}
-		    	if (!isValid(ktnFinAck)) {
-					throw new IOException("Invalid packet");
-				}
-
-    		}
-    		else {
-    			System.out.println("> alternativ 2");
-		    	//Send fin
-		    	KtnDatagram finPacket = constructInternalPacket(Flag.FIN);
-		    	simplySendPacket(finPacket);
-		    	//sendDataPacketWithRetransmit(finPacket);
-
-		    	//Wait for ACK
-		    	state = State.FIN_WAIT_1;
-		    	KtnDatagram ktnFinAck = receiveAck();
-		    	if (ktnFinAck == null) {
-		    		throw new Exception("No packet received");
-		    	}
-		    	if (!isValid(ktnFinAck)) {
-					throw new IOException();
-				}
-
-		    	//Wait for fin
-		    	state = State.FIN_WAIT_2;
-		    	KtnDatagram ktnFin = receivePacket(true);
-		    	if (ktnFin == null) {
-		    		throw new Exception("No packet received");
-		    	}
-		    	if (!isValid(ktnFin)) {
-					throw new IOException("Invalid packet");
-				}
-
-		    	//Fix stupid problem
-    			Thread.sleep(10);
-
-		    	//Send ack
-		    	sendAck(ktnFin, false);
-    		}
-    	}
-    	catch (Exception e) {
-    		e.printStackTrace();
-    		//throw new IOException();
-    	}
-        
-        //Closed
-        state = State.CLOSED;
+			Thread.sleep(3000);
+		} catch (InterruptedException e1) {
+			e1.printStackTrace();
+		}
     }
 
     /**
@@ -313,48 +315,32 @@ public class ConnectionImpl extends AbstractConnection {
      * @return true if packet is free of errors, false otherwise.
      */
     protected boolean isValid(KtnDatagram packet) {
-System.out.println("> start validate");
-    	
-    	Flag flag = packet.getFlag();
-    	
-        if (state == State.SYN_SENT && flag != Flag.SYN_ACK) {
+    	System.out.println("**************** TESTING VALIDITY ******************");
+    	if(packet == null){
+    		System.out.println("NULL PACKET!");
+    		return false;
+    	}
+    	int ackNr = packet.getAck();
+    	if(state == State.ESTABLISHED && ackNr != -1 && ackNr != lastDataPacketSent.getSeq_nr()){
+    		System.out.println("MOTTOK FEIL ACK!");
+    		return false;
+    	}
+        if(packet.getChecksum() != packet.calculateChecksum()){
+        	System.out.println("************** FANT BITFEIL ******************");
         	return false;
         }
-        if (state == State.SYN_RCVD && flag != Flag.ACK) {
+        if(!myAddress.equals(packet.getDest_addr())){
+        	System.out.println("************** FANT GHOST *********************");
+        	System.out.println("FORVENTET: " + myAddress);
+        	System.out.println("MOTTOK TIL: " + packet.getDest_addr());
         	return false;
         }
-        if (state == State.LISTEN && flag != Flag.SYN) {
+        KtnDatagram lastPacket = lastValidPacketReceived;
+        if(lastPacket != null && lastPacket.getSeq_nr() + 1 != packet.getSeq_nr()){
+        	System.out.println("************** FEIL PAKKE ********************");
         	return false;
         }
-        if (state == State.FIN_WAIT_1 && flag != Flag.ACK) {
-        	return false;
-        }
-        if (state == State.FIN_WAIT_2 && flag != Flag.FIN) {
-        	return false;
-        }
-        if (state == State.ESTABLISHED && (flag == Flag.SYN || flag == Flag.SYN_ACK)) {
-        	return false;
-        }
-        if (state == State.LAST_ACK && flag != Flag.ACK) {
-        	return false;
-        }
-        
-        if (packet.getChecksum() != packet.calculateChecksum()) {
-        	return false;
-        }
-        
-        if (flag == Flag.ACK && packet.getAck() != nextSequenceNo - 1) {
-        	return false;
-        }
-        
-        if (lastValidPacketReceived != null && packet.getSeq_nr() != lastValidPacketReceived.getSeq_nr() + 1) {
-        	System.out.println(packet.getSeq_nr());
-        	System.out.println(lastValidPacketReceived.getSeq_nr());
-        	return false;
-        }
-        
-        System.out.println("> valid: " + packet.getSeq_nr());
-        lastValidPacketReceived = packet;
+        System.out.println("VALID PACKET!");
         return true;
     }
 }

@@ -199,11 +199,11 @@ public class ChatServer extends JFrame {
                             broadcast(getUsers().toString());
                         }
                     } catch (SocketTimeoutException e) {
-		      DBG("startServer(): Noe gikk galt, forsøk igjen.");
-		      e.printStackTrace();
+                    	DBG("startServer(): Noe gikk galt, forsøk igjen.");
+                    	e.printStackTrace();
                     } catch (IOException e) {
-		      DBG("startServer(): Noe gikk galt, forsøk igjen.");
-		      e.printStackTrace();
+                    	DBG("startServer(): Noe gikk galt, forsøk igjen.");
+                    	e.printStackTrace();
                     }
                 }
             }

@@ -8,7 +8,7 @@
   <header>0.7</header>
   <onlydata>true</onlydata>
   <serverAddress>localhost</serverAddress>
-  <serverport>10500</serverport>
-  <simpleConnection>true</simpleConnection>
+  <serverport>12387</serverport>
+  <simpleConnection>false</simpleConnection>
 </root>
 
