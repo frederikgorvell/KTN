@@ -72,19 +72,20 @@ public class ConnectionImpl extends AbstractConnection {
      * @see Connection#connect(InetAddress, int)
      */
     public void connect(InetAddress remoteAddress, int remotePort) throws IOException, SocketTimeoutException {
-    	if (state != State.CLOSED){
+    	if (state != State.CLOSED) {
     		throw new IllegalStateException("Must be in closed state.");
     	}
     	this.remoteAddress = remoteAddress.getHostAddress();
         this.remotePort = remotePort;
         KtnDatagram syn = constructInternalPacket(Flag.SYN);
         
-        try{
+        try {
 			simplySendPacket(syn);
-		}catch(ClException e){
-			try{
+		} catch(ClException e) {
+			try {
 				Thread.sleep(5000);
-			}catch(InterruptedException ie){
+			} catch(InterruptedException ie) {
+				//
 			}
 			this.connect(remoteAddress, remotePort);
 			return;
@@ -94,15 +95,16 @@ public class ConnectionImpl extends AbstractConnection {
 
         KtnDatagram synack = receiveAck();
         
-        if(!isValid(synack)){
+        if (!isValid(synack)) {
         	throw new IOException("Not valid synack received.");
         }
         this.remotePort = synack.getSrc_port();
         lastValidPacketReceived = synack;
         
-        try{
+        try {
         	Thread.sleep(1000);
-        }catch(InterruptedException e){
+        } catch(InterruptedException e) {
+        	//
         }
         sendAck(synack, false);
         state = State.ESTABLISHED;
@@ -115,7 +117,7 @@ public class ConnectionImpl extends AbstractConnection {
      * @see Connection#accept()
      */
     public Connection accept() throws IOException, SocketTimeoutException {
-    	if (state != State.CLOSED){
+    	if (state != State.CLOSED) {
     		throw new IllegalStateException("Must be in closed state.");
     	}
     	state = State.LISTEN;
@@ -126,7 +128,7 @@ public class ConnectionImpl extends AbstractConnection {
     	} while (syn == null || syn.getFlag() != Flag.SYN);
     	
     	int port = 4000;
-    	while (ConnectionImpl.usedPorts.containsKey(port)){
+    	while (ConnectionImpl.usedPorts.containsKey(port)) {
     		port++;
     	}
     	
@@ -135,14 +137,15 @@ public class ConnectionImpl extends AbstractConnection {
     	newConnection.remotePort = syn.getSrc_port();
     	newConnection.state = State.SYN_RCVD;
     	
-    	try{
+    	try {
     		Thread.sleep(1000);
-    	}catch(InterruptedException e){
+    	} catch(InterruptedException e) {
+    		//
     	}
     	newConnection.sendAck(syn, true);
         
         KtnDatagram ack = newConnection.receiveAck();
-        if(!isValid(ack)){
+        if (!isValid(ack)) {
         	throw new IOException("Not valid ack received.");
         }
         newConnection.lastValidPacketReceived = ack;
@@ -164,10 +167,11 @@ public class ConnectionImpl extends AbstractConnection {
      * @see no.ntnu.fp.net.co.Connection#send(String)
      */
     public void send(String msg) throws ConnectException, IOException {
-    	while(sendingPacket){
-			try{
+    	while (sendingPacket) {
+			try {
 				Thread.sleep(50);
-			}catch(InterruptedException e){
+			} catch(InterruptedException e) {
+				//
 			}
     	}
 
@@ -175,19 +179,19 @@ public class ConnectionImpl extends AbstractConnection {
     	KtnDatagram packet = constructDataPacket(msg);
     	int triesLeft = MAX_TRIES;
     	KtnDatagram ack;
-    	do{
+    	do {
     		ack = sendDataPacketWithRetransmit(packet);
-    		if(ack != null){
+    		if (ack != null) {
     			System.out.println("\n sendPacket  " + packet.getSeq_nr() + " " + ack.getAck());
     		}
-    	}while((!isValid(ack) || ack.getFlag() != Flag.ACK || ack.getAck() < packet.getSeq_nr()) && triesLeft-- > 0);
+    	} while((!isValid(ack) || ack.getFlag() != Flag.ACK || ack.getAck() < packet.getSeq_nr()) && triesLeft-- > 0);
     	
     	if (ack == null) {
     		System.out.println("\n\nReceived no ack.\n\n");
     		return;
     	}
     	System.out.println("\n validPacketSent  " + lastValidPacketReceived.getSeq_nr() + " " + ack.getSeq_nr());
-    	if (ack.getSeq_nr() > lastValidPacketReceived.getSeq_nr()){
+    	if (ack.getSeq_nr() > lastValidPacketReceived.getSeq_nr()) {
     		lastValidPacketReceived = ack;
     	}
     	lastDataPacketSent = packet;
@@ -206,23 +210,23 @@ public class ConnectionImpl extends AbstractConnection {
     	int triesLeft = MAX_TRIES;
     	KtnDatagram packet = null;
     	while (triesLeft-- > 0) {
-	    	try{
+	    	try {
 	    		packet = receivePacket(false);
-	    	}catch(EOFException e){
-	    		if(disconnectRequest != null){
+	    	} catch(EOFException e) {
+	    		if (disconnectRequest != null) {
 	        		sendAck(disconnectRequest, false);
 	        		state = State.CLOSE_WAIT;
 	        		throw e;
-	    		}else{
+	    		} else {
 	    			sendAck(lastValidPacketReceived, false);
 	    			continue;
 	    		}
 	    	}
-	    	if(packet.getFlag() == Flag.NONE && isValid(packet) && packet.getSeq_nr() == lastValidPacketReceived.getSeq_nr()+1){
-	    		if(packet.getSeq_nr() > lastValidPacketReceived.getSeq_nr()){
+	    	if (packet.getFlag() == Flag.NONE && isValid(packet) && packet.getSeq_nr() == lastValidPacketReceived.getSeq_nr()+1) {
+	    		if (packet.getSeq_nr() > lastValidPacketReceived.getSeq_nr()) {
 	    			lastValidPacketReceived = packet;
 	    			sendAck(packet, false);
-	    		}else{
+	    		} else {
 	    			sendAck(lastValidPacketReceived, false);
 	    		}
 	    		System.out.println("\n validPacket  " + lastValidPacketReceived.getSeq_nr() + " " + packet.getSeq_nr());
@@ -231,10 +235,10 @@ public class ConnectionImpl extends AbstractConnection {
 	    	System.out.println("\n sendAckAgain  " + lastValidPacketReceived.getSeq_nr() + " " + packet.getSeq_nr());
 	    	sendAck(lastValidPacketReceived, false);
     	}
-    	if(packet != null){
+    	if (packet != null) {
     		lastValidPacketReceived = packet; 
     		return packet.toString();
-    	}else{
+    	} else {
     		return receive();
     	}
     }
@@ -250,13 +254,15 @@ public class ConnectionImpl extends AbstractConnection {
     	KtnDatagram ack;
     	do {
     		state = initialState;
-    		try{
+    		try {
 				simplySendPacket(packet);
-			}catch(ClException e){
+			} catch(ClException e) {
+				//
 			}
 			state = disconnectRequest != null ? State.LAST_ACK : State.FIN_WAIT_1;
     		ack = receiveAck();
     	} while(!isValid(ack) || ack.getFlag() != Flag.ACK);
+    	
     	if (ack.getSeq_nr() > lastValidPacketReceived.getSeq_nr()) {
     		lastValidPacketReceived = ack;
     	}
@@ -272,12 +278,13 @@ public class ConnectionImpl extends AbstractConnection {
         	try {
         		Thread.sleep(1000);
     		} catch(InterruptedException e) {
+    			//
     		}
         	sendAck(finPacket, false);
         	state = State.TIME_WAIT;
         	state = State.CLOSED;
         }
-        if (ConnectionImpl.usedPorts.containsKey(myPort)){
+        if (ConnectionImpl.usedPorts.containsKey(myPort)) {
         	ConnectionImpl.usedPorts.remove(myPort);
         }
     }
