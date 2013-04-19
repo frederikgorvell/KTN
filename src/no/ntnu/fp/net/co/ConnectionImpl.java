@@ -52,8 +52,7 @@ public class ConnectionImpl extends AbstractConnection {
     public String getIPv4Address() {
         try {
             return InetAddress.getLocalHost().getHostAddress();
-        }
-        catch (UnknownHostException e) {
+        } catch (UnknownHostException e) {
             return "127.0.0.1";
         }
     }
